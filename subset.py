@@ -33,7 +33,7 @@ parser.add_argument("--input_path", "-i", dest="input_file_path", required=True,
                     help="path to the input files",
                     type=lambda x: is_valid_path(parser, x))
 
-parser.add_argument("--start_date","-s", dest="start_date", required=True,
+parser.add_argument("--start_date", "-s", dest="start_date", required=True,
                     type=lambda x: datetime.datetime.strptime(x, '%m-%d-%Y'),
                     help="the starting date/time to subset from", )
 
@@ -66,6 +66,7 @@ print(f'Days of data to process: {days_to_load}')
 
 input_files = sorted(glob.glob(os.path.join(args.input_file_path, 'wrfout_d01_*')))
 
+
 # TODO replace with arguments
 # Argument  List:
 # INPUT FILE TYPE (WRF, NetCDF)
@@ -77,9 +78,8 @@ input_files = sorted(glob.glob(os.path.join(args.input_file_path, 'wrfout_d01_*'
 # hourly forcings data
 # 1D or 3D output
 
-#out_dir = '/home/arezaii/wrf_out_for_parflow'
-#input_files = sorted(glob.glob(f'/scratch/arezaii/wrf_out/wy_{water_year}/d01/wrfout_d01_*'))
-
+# out_dir = '/home/arezaii/wrf_out_for_parflow'
+# input_files = sorted(glob.glob(f'/scratch/arezaii/wrf_out/wy_{water_year}/d01/wrfout_d01_*'))
 
 
 # Decummulate Precipitation
@@ -112,7 +112,6 @@ def subset_variables(ds):
 
 
 def get_coords_from_lat_lon(lat_lon_file, x_size, y_size):
-
     f = lat_lon_file
     latlon = f.read().rstrip('\n').split('\n')
     f.close()
@@ -146,7 +145,7 @@ def make_dest_grid(coords, time_index):
     x_len = len(coords.get('lons')[0])
     y_len = len(coords.get('lats'))
     data = np.zeros((y_len, x_len))
-    #print(data.shape)
+    # print(data.shape)
     # da_lons = xr.DataArray(coords.get('lons'), dims=['lon'])
     # da_lats = xr.DataArray(coords.get('lats'), dims=['lat'])
     # print(da_lons,da_lats)
@@ -177,7 +176,7 @@ def build_regridder(original_dataset, destination_grid):
 
 def regrid_data(out_grid, regridder):
     varlist = [varname for varname in out_grid.keys() if varname != 'Times']
-    #print(varlist)
+    # print(varlist)
     new_ds = xr.Dataset(data_vars=None, attrs=out_grid.attrs)
     for var in varlist:
         # print(f'starting {var}')
@@ -185,8 +184,8 @@ def regrid_data(out_grid, regridder):
         new_ds[var] = ['Time', 'south_north', 'west_east'], dask.array.zeros_like(var_regrid)
         new_ds[var] = var_regrid
     new_ds.attrs = {'TITLE': 'REGRIDDED AND SUBSET OUTPUT FROM WRF V3.8.1 MODEL'}
-    #new_ds.to_netcdf(os.path.join(out_dir, regrid_filename), mode='w')
-    #print('done')
+    # new_ds.to_netcdf(os.path.join(out_dir, regrid_filename), mode='w')
+    # print('done')
     return new_ds
 
 
@@ -194,32 +193,33 @@ def write_pfb_output(forcings_data, num_days):
     varnames = ['APCP', 'DLWR', 'DSWR', 'Press', 'SPFH', 'Temp', 'UGRD', 'VGRD']
 
     for var in varnames:
-        start = 0 # start hour (inclusive)
-        stop = 24 # end hour (exclusive)
+        start = 0  # start hour (inclusive)
+        stop = 24  # end hour (exclusive)
         # start hour and stop hour for a day
         # range is number of days contained in forcings file
         for bulk_collect_times in range(0, num_days):
             write_pfb.pfb_write(np.transpose(forcings_data[var].values[start:stop, :, :], (2, 1, 0)),
-                                os.path.join(args.out_dir,f'WRF.{var}.{start:06d}_to_{stop:06d}.pfb'), float(0.0), float(0.0), float(0.0),
+                                os.path.join(args.out_dir, f'WRF.{var}.{start:06d}_to_{stop:06d}.pfb'), float(0.0),
+                                float(0.0), float(0.0),
                                 float(1000.0), float(1000.0), float(20.0))
             start = stop
-            stop = stop + 24 # size of day in hours
+            stop = stop + 24  # size of day in hours
 
-        #dask.compute()
-
+        # dask.compute()
 
 
 # load the dataset
 print('Begin opening the dataset...')
-ds_orig = xr.open_mfdataset(input_files[:days_to_load], drop_variables=var_list_parflow, combine='nested', concat_dim='Time')
+ds_orig = xr.open_mfdataset(input_files[:days_to_load], drop_variables=var_list_parflow, combine='nested',
+                            concat_dim='Time')
 
 # subset the list of variables
 ds_subset = subset_variables(ds_orig)
 
 # get the coordinates into a dictionary
 
-#R2 /scratch/arezaii/snake_river_shape_domain/input_files
-#filepath = '/home/arezaii/projects/parflow/snake_river_shape_domain/input_files/snake_river.latlon.txt'
+# R2 /scratch/arezaii/snake_river_shape_domain/input_files
+# filepath = '/home/arezaii/projects/parflow/snake_river_shape_domain/input_files/snake_river.latlon.txt'
 
 print('Begin reading destination coordinates...')
 coordinates = get_coords_from_lat_lon(args.lat_lon_file, args.nx, args.ny)
@@ -227,8 +227,7 @@ coordinates = get_coords_from_lat_lon(args.lat_lon_file, args.nx, args.ny)
 # create the destination grid with lat/lon values
 dest_grid = make_dest_grid(coordinates, pd.date_range(args.start_date, periods=days_to_load))
 
-
-out_grid, regrid  = build_regridder(ds_subset, dest_grid)
+out_grid, regrid = build_regridder(ds_subset, dest_grid)
 
 print('Begin regridding data...')
 regridded_data = regrid_data(out_grid, regrid)
