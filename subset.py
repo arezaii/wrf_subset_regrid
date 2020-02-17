@@ -13,8 +13,9 @@ import write_pfb
 # TODO replace with arguments
 water_year = 2015
 out_dir = '/home/arezaii/wrf_out_for_parflow'
-out_filename = 'd01_parflow_vars.nc'
-input_files = sorted(glob.glob(f'/scratch/arezaii/wrf_out/wy_{water_year}/d01/wrfout_d01_*'))
+#out_filename = 'd01_parflow_vars.nc'
+#input_files = sorted(glob.glob(f'/scratch/arezaii/wrf_out/wy_{water_year}/d01/wrfout_d01_*'))
+input_files = sorted(glob.glob(f'/home/arezaii/wrf_history/vol11/wrf_out//wy_{water_year}/d01/wrfout_d01_*'))
 #regrid_filename = 'd01_parflow_vars_regridded_1_day.nc'
 #avg_filename = 'd01_parflow_vars_avg.nc'
 #dest_grid = xr.open_dataset('/home/arezaii/git/sr_empty_netcdf_domain.nc')
@@ -120,9 +121,9 @@ def regrid_data(out_grid, regridder):
 
     for var in varlist:
         # print(f'starting {var}')
-        var_regrid = regridder(out_grid[var])
-        new_ds[var] = (['Time', 'south_north', 'west_east'], dask.array.zeros_like(var_regrid))
-        new_ds[var] = var_regrid
+        var_regrid = dask.delayed(regridder(out_grid[var]))
+        new_ds[var] = dask.delayed(['Time', 'south_north', 'west_east'], dask.array.zeros_like(var_regrid))
+        new_ds[var] = dask.delayed(var_regrid)
     new_ds.attrs = {'TITLE': 'REGRIDDED AND SUBSET OUTPUT FROM WRF V3.8.1 MODEL'}
     #new_ds.to_netcdf(os.path.join(out_dir, regrid_filename), mode='w')
     #print('done')
@@ -138,11 +139,13 @@ def write_pfb_output(forcings_data, num_days):
         # start hour and stop hour for a day
         # range is number of days contained in forcings file
         for bulk_collect_times in range(0, num_days):
-            write_pfb.pfb_write(np.transpose(forcings_data[var].values[start:stop, :, :], (2, 1, 0)),
+            dask.delayed(write_pfb.pfb_write(np.transpose(forcings_data[var].values[start:stop, :, :], (2, 1, 0)),
                                 f'WRF.{var}.{start}_to_{stop}.pfb', float(0.0), float(0.0), float(0.0),
-                                float(1000.0), float(1000.0), float(20.0))
+                                float(1000.0), float(1000.0), float(20.0)))
             start = stop
             stop = stop + 24 # size of day in hours
+
+        dask.compute()
 
 
 
@@ -154,7 +157,10 @@ ds_orig = xr.open_mfdataset(input_files[:days_to_load], drop_variables=var_list_
 ds_subset = subset_variables(ds_orig)
 
 # get the coordinates into a dictionary
-filepath = '/scratch/arezaii/snake_river_shape_domain/input_files/snake_river.latlon.txt'
+#local /home/arezaii/projects/parflow/snake_river_shape_domain/input_files
+#R2 /scratch/arezaii/snake_river_shape_domain/input_files
+filepath = '/home/arezaii/projects/parflow/snake_river_shape_domain/input_files/snake_river.latlon.txt'
+
 # 704 = number of x values
 # 736 = number of y values
 coordinates = get_coords_from_lat_lon(filepath, 704, 736)
