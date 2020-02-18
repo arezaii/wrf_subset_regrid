@@ -1,3 +1,4 @@
+import sys
 import xarray as xr
 import numpy as np
 import pandas as pd
@@ -10,7 +11,7 @@ import write_pfb
 import argparse
 import datetime
 
-v = "subset and regrid (WRF) forcings data for (ParFlow) hydrologic model"
+descr = "subset and regrid (WRF) forcings data for (ParFlow) hydrologic model"
 
 
 def is_valid_path(parser, arg):
@@ -27,48 +28,41 @@ def is_valid_file(parser, arg):
         return open(arg, 'r')  # return open file handle
 
 
-parser = argparse.ArgumentParser()
+def parse_args(args):
 
-parser.add_argument("--input_path", "-i", dest="input_file_path", required=True,
-                    help="path to the input files",
-                    type=lambda x: is_valid_path(parser, x))
+    parser = argparse.ArgumentParser()
 
-parser.add_argument("--start_date", "-s", dest="start_date", required=True,
-                    type=lambda x: datetime.datetime.strptime(x, '%m-%d-%Y'),
-                    help="the starting date/time to subset from", )
+    parser.add_argument("--input_path", "-i", dest="input_file_path", required=True,
+                        help="path to the input files",
+                        type=lambda x: is_valid_path(parser, x))
 
-parser.add_argument("--end_date", "-e", dest="end_date", required=True,
-                    type=lambda x: datetime.datetime.strptime(x, '%m-%d-%Y'),
-                    help="the ending date/time to subset from")
+    parser.add_argument("--start_date", "-s", dest="start_date", required=True,
+                        type=lambda x: datetime.datetime.strptime(x, '%m-%d-%Y'),
+                        help="the starting date/time to subset from", )
 
-parser.add_argument("--output_dir", "-o", dest="out_dir", required=True,
-                    help="the directory to write output to",
-                    type=lambda x: is_valid_path(parser, x))
+    parser.add_argument("--end_date", "-e", dest="end_date", required=True,
+                        type=lambda x: datetime.datetime.strptime(x, '%m-%d-%Y'),
+                        help="the ending date/time to subset from")
 
-parser.add_argument("--lat_lon_file", "-l", dest="lat_lon_file", required=True,
-                    help="the list of lat/lon for the ParFlow grid",
-                    type=lambda x: is_valid_file(parser, x))
+    parser.add_argument("--output_dir", "-o", dest="out_dir", required=True,
+                        help="the directory to write output to",
+                        type=lambda x: is_valid_path(parser, x))
 
-parser.add_argument("--dest_grid_nx", "-x", dest="nx", required=True,
-                    help="the number of x cells in the destination grid", type=int)
+    parser.add_argument("--lat_lon_file", "-l", dest="lat_lon_file", required=True,
+                        help="the list of lat/lon for the ParFlow grid",
+                        type=lambda x: is_valid_file(parser, x))
 
-parser.add_argument("--dest_grid_ny", "-y", dest="ny", required=True,
-                    help="the number of y cells in the destination grid", type=int)
+    parser.add_argument("--dest_grid_nx", "-x", dest="nx", required=True,
+                        help="the number of x cells in the destination grid", type=int)
 
-args = parser.parse_args()
+    parser.add_argument("--dest_grid_ny", "-y", dest="ny", required=True,
+                        help="the number of y cells in the destination grid", type=int)
 
-days_to_load = (args.end_date - args.start_date).days
-
-print('Begin processesing job:')
-for arg in vars(args):
-    print(' {} {}'.format(arg, getattr(args, arg) or ''))
-print(f'Days of data to process: {days_to_load}')
-
-input_files = sorted(glob.glob(os.path.join(args.input_file_path, 'wrfout_d01_*')))
+    return parser.parse_args(args)
 
 
 # TODO replace with arguments
-# Argument  List:
+# Arguments To Consider:
 # INPUT FILE TYPE (WRF, NetCDF)
 # WRF Specific stuff (list of vars to subset)
 # OUTPUT_FILE_TYPE (ParFlow, PFB) (Hourly Forcings)
@@ -78,7 +72,7 @@ input_files = sorted(glob.glob(os.path.join(args.input_file_path, 'wrfout_d01_*'
 # hourly forcings data
 # 1D or 3D output
 
-# out_dir = '/home/arezaii/wrf_out_for_parflow'
+
 # input_files = sorted(glob.glob(f'/scratch/arezaii/wrf_out/wy_{water_year}/d01/wrfout_d01_*'))
 
 
@@ -189,7 +183,7 @@ def regrid_data(out_grid, regridder):
     return new_ds
 
 
-def write_pfb_output(forcings_data, num_days):
+def write_pfb_output(forcings_data, num_days, out_dir):
     varnames = ['APCP', 'DLWR', 'DSWR', 'Press', 'SPFH', 'Temp', 'UGRD', 'VGRD']
 
     for var in varnames:
@@ -199,7 +193,7 @@ def write_pfb_output(forcings_data, num_days):
         # range is number of days contained in forcings file
         for bulk_collect_times in range(0, num_days):
             write_pfb.pfb_write(np.transpose(forcings_data[var].values[start:stop, :, :], (2, 1, 0)),
-                                os.path.join(args.out_dir, f'WRF.{var}.{start:06d}_to_{stop:06d}.pfb'), float(0.0),
+                                os.path.join(out_dir, f'WRF.{var}.{start:06d}_to_{stop:06d}.pfb'), float(0.0),
                                 float(0.0), float(0.0),
                                 float(1000.0), float(1000.0), float(20.0))
             start = stop
@@ -208,30 +202,50 @@ def write_pfb_output(forcings_data, num_days):
         # dask.compute()
 
 
-# load the dataset
-print('Begin opening the dataset...')
-ds_orig = xr.open_mfdataset(input_files[:days_to_load], drop_variables=var_list_parflow, combine='nested',
-                            concat_dim='Time')
+def main():
+    # parse the command line arguments
+    args = parse_args(sys.argv[1:])
 
-# subset the list of variables
-ds_subset = subset_variables(ds_orig)
+    # calculate number of input days to process
+    days_to_load = (args.end_date - args.start_date).days
 
-# get the coordinates into a dictionary
+    # alert the user about the job details
+    print('Begin processesing job:')
+    for arg in vars(args):
+        print(' {} {}'.format(arg, getattr(args, arg) or ''))
+    print(f'Days of data to process: {days_to_load}')
 
-# R2 /scratch/arezaii/snake_river_shape_domain/input_files
-# filepath = '/home/arezaii/projects/parflow/snake_river_shape_domain/input_files/snake_river.latlon.txt'
+    # generate the list of input files
+    input_files = sorted(glob.glob(os.path.join(args.input_file_path, 'wrfout_d01_*')))
 
-print('Begin reading destination coordinates...')
-coordinates = get_coords_from_lat_lon(args.lat_lon_file, args.nx, args.ny)
+    # load the input files
+    print('Begin opening the dataset...')
+    ds_orig = xr.open_mfdataset(input_files[:days_to_load],
+                                drop_variables=var_list_parflow,
+                                combine='nested',
+                                concat_dim='Time')
 
-# create the destination grid with lat/lon values
-dest_grid = make_dest_grid(coordinates, pd.date_range(args.start_date, periods=days_to_load))
+    # subset the list of variables
+    ds_subset = subset_variables(ds_orig)
 
-out_grid, regrid = build_regridder(ds_subset, dest_grid)
+    # R2 /scratch/arezaii/snake_river_shape_domain/input_files
+    # filepath = '/home/arezaii/projects/parflow/snake_river_shape_domain/input_files/snake_river.latlon.txt'
 
-print('Begin regridding data...')
-regridded_data = regrid_data(out_grid, regrid)
+    print('Begin reading destination coordinates...')
+    coordinates = get_coords_from_lat_lon(args.lat_lon_file, args.nx, args.ny)
 
-print('Begin writing output files...')
-write_pfb_output(regridded_data, days_to_load)
-print('Process complete!')
+    # create the destination grid with lat/lon values
+    dest_grid = make_dest_grid(coordinates, pd.date_range(args.start_date, periods=days_to_load))
+
+    out_grid, regrid = build_regridder(ds_subset, dest_grid)
+
+    print('Begin regridding data...')
+    regridded_data = regrid_data(out_grid, regrid)
+
+    print('Begin writing output files...')
+    write_pfb_output(regridded_data, days_to_load, args.out_dir)
+    print('Process complete!')
+
+
+if __name__ == '__main__':
+    main()
