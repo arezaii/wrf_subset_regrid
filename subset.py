@@ -10,6 +10,7 @@ import dask
 import write_pfb
 import argparse
 import datetime
+import scipy
 
 descr = "subset and regrid (WRF) forcings data for (ParFlow) hydrologic model"
 
@@ -30,7 +31,7 @@ def is_valid_file(parser, arg):
 
 def parse_args(args):
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(descr)
 
     parser.add_argument("--input_path", "-i", dest="input_file_path", required=True,
                         help="path to the input files",
@@ -149,6 +150,15 @@ def make_dest_grid(coords, time_index):
 
     return ds
 
+# Courtesy of https://github.com/JiaweiZhuang/xESMF/issues/15
+def add_matrix_NaNs(regridder):
+    X = regridder.weights
+    M = scipy.sparse.csr_matrix(X)
+    num_nonzeros = np.diff(M.indptr)
+    M[num_nonzeros == 0, 0] = np.NaN
+    regridder.weights = scipy.sparse.coo_matrix(M)
+    return regridder
+
 
 def build_regridder(original_dataset, destination_grid):
     ds_out = original_dataset.rename({'XLAT': 'lat', 'XLONG': 'lon'})
@@ -165,6 +175,7 @@ def build_regridder(original_dataset, destination_grid):
 
     # create the regridder
     regrid = xe.Regridder(ds_out, destination_grid, 'bilinear', reuse_weights=True)
+    regrid = add_matrix_NaNs(regrid)
     return ds_out, regrid
 
 
@@ -192,14 +203,13 @@ def write_pfb_output(forcings_data, num_days, out_dir):
         # start hour and stop hour for a day
         # range is number of days contained in forcings file
         for bulk_collect_times in range(0, num_days):
-            write_pfb.pfb_write(np.transpose(forcings_data[var].values[start:stop, :, :], (2, 1, 0)),
+            write_pfb.pfb_write(np.transpose(np.nan_to_num(forcings_data[var].values[start:stop, :, :], nan=-9999.0),
+                                             (2, 1, 0)),
                                 os.path.join(out_dir, f'WRF.{var}.{start:06d}_to_{stop:06d}.pfb'), float(0.0),
                                 float(0.0), float(0.0),
                                 float(1000.0), float(1000.0), float(20.0))
             start = stop
             stop = stop + 24  # size of day in hours
-
-        # dask.compute()
 
 
 def main():
