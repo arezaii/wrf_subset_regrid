@@ -5,7 +5,8 @@ conda create -n wrf_subset_regrid -c conda-forge --strict -y \
     numpy xesmf \
     xarray \
     dask \
-    pandas
+    pandas \
+    tqdm
 
 conda activate wrf_subset_regrid
 
