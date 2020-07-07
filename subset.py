@@ -39,11 +39,11 @@ def parse_args(args):
 
     parser.add_argument("--start_date", "-s", dest="start_date", required=True,
                         type=lambda x: datetime.datetime.strptime(x, '%m-%d-%Y'),
-                        help="the starting date/time to subset from", )
+                        help="the starting date/time to subset from (inclusive)", )
 
     parser.add_argument("--end_date", "-e", dest="end_date", required=True,
                         type=lambda x: datetime.datetime.strptime(x, '%m-%d-%Y'),
-                        help="the ending date/time to subset from")
+                        help="the ending date/time to subset from (exclusive)")
 
     parser.add_argument("--output_dir", "-o", dest="out_dir", required=True,
                         help="the directory to write output to",
@@ -58,6 +58,14 @@ def parse_args(args):
 
     parser.add_argument("--dest_grid_ny", "-y", dest="ny", required=True,
                         help="the number of y cells in the destination grid", type=int)
+
+    parser.add_argument("--day_number_start", "-d", dest="day_number", required=False,
+                        default=0, type=int,
+                        help="the counter value for the start day")
+
+    parser.add_argument("--number_of_days", "-n", dest="num_days", required=False,
+                        default=0, type=int,
+                        help="the number of days in the timespan to subset")
 
     return parser.parse_args(args)
 
@@ -194,22 +202,35 @@ def regrid_data(out_grid, regridder):
     return new_ds
 
 
-def write_pfb_output(forcings_data, num_days, out_dir):
+def write_pfb_output(forcings_data, num_days, out_dir, start_day_num=0):
     varnames = ['APCP', 'DLWR', 'DSWR', 'Press', 'SPFH', 'Temp', 'UGRD', 'VGRD']
 
+    hours_in_file = 24
+
     for var in varnames:
+        file_time_start = start_day_num * hours_in_file
+        file_time_stop = file_time_start + hours_in_file
+
         start = 0  # start hour (inclusive)
-        stop = 24  # end hour (exclusive)
+        stop = hours_in_file  # end hour (exclusive)
+
+        # attempt to fix rain values being too high in pfb files
+        # WRF files are 9 km^2, PFB are 1 km^2
+        if var == 'APCP':
+            forcings_data[var] = forcings_data[var] / 9
+
         # start hour and stop hour for a day
         # range is number of days contained in forcings file
         for bulk_collect_times in range(0, num_days):
             write_pfb.pfb_write(np.transpose(np.nan_to_num(forcings_data[var].values[start:stop, :, :], nan=-9999.0),
                                              (2, 1, 0)),
-                                os.path.join(out_dir, f'WRF.{var}.{start:06d}_to_{stop:06d}.pfb'), float(0.0),
-                                float(0.0), float(0.0),
-                                float(1000.0), float(1000.0), float(20.0))
+                                os.path.join(out_dir, f'WRF.{var}.{file_time_start:06d}_to_{file_time_stop:06d}.pfb'),
+                                float(0.0), float(0.0), float(0.0), float(1000.0), float(1000.0), float(1000.0))
             start = stop
-            stop = stop + 24  # size of day in hours
+            stop = stop + hours_in_file  # size of day in hours
+
+            file_time_start = file_time_stop
+            file_time_stop = file_time_stop + hours_in_file
 
 
 def main():
@@ -217,10 +238,14 @@ def main():
     args = parse_args(sys.argv[1:])
 
     # calculate number of input days to process
-    days_to_load = (args.end_date - args.start_date).days
+    if args.num_days == 0:
+        days_to_load = (args.end_date - args.start_date).days - args.day_number
+    else:
+        days_to_load = args.num_days
+
 
     # alert the user about the job details
-    print('Begin processesing job:')
+    print('Begin processing job:')
     for arg in vars(args):
         print(' {} {}'.format(arg, getattr(args, arg) or ''))
     print(f'Days of data to process: {days_to_load}')
@@ -230,7 +255,8 @@ def main():
 
     # load the input files
     print('Begin opening the dataset...')
-    ds_orig = xr.open_mfdataset(input_files[:days_to_load],
+    input_files = input_files[args.day_number:days_to_load+args.day_number]
+    ds_orig = xr.open_mfdataset(input_files,
                                 drop_variables=var_list_parflow,
                                 combine='nested',
                                 concat_dim='Time')
@@ -253,7 +279,7 @@ def main():
     regridded_data = regrid_data(out_grid, regrid)
 
     print('Begin writing output files...')
-    write_pfb_output(regridded_data, days_to_load, args.out_dir)
+    write_pfb_output(regridded_data, days_to_load, args.out_dir, args.day_number)
     print('Process complete!')
 
 
