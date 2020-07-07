@@ -11,6 +11,7 @@ import write_pfb
 import argparse
 import datetime
 import scipy
+from tqdm import tqdm
 
 descr = "subset and regrid (WRF) forcings data for (ParFlow) hydrologic model"
 
@@ -191,7 +192,7 @@ def regrid_data(out_grid, regridder):
     varlist = [varname for varname in out_grid.keys() if varname != 'Times']
     # print(varlist)
     new_ds = xr.Dataset(data_vars=None, attrs=out_grid.attrs)
-    for var in varlist:
+    for var in tqdm(varlist):
         # print(f'starting {var}')
         var_regrid = regridder(out_grid[var])
         new_ds[var] = ['Time', 'south_north', 'west_east'], dask.array.zeros_like(var_regrid)
@@ -207,7 +208,7 @@ def write_pfb_output(forcings_data, num_days, out_dir, start_day_num=0):
 
     hours_in_file = 24
 
-    for var in varnames:
+    for var in tqdm(varnames):
         file_time_start = start_day_num * hours_in_file
         file_time_stop = file_time_start + hours_in_file
 
