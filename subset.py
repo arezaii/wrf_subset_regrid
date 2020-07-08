@@ -244,7 +244,6 @@ def main():
     else:
         days_to_load = args.num_days
 
-
     # alert the user about the job details
     print('Begin processing job:')
     for arg in vars(args):
