@@ -1,3 +1,4 @@
+import math
 import sys
 import xarray as xr
 import numpy as np
@@ -12,6 +13,9 @@ import argparse
 import datetime
 import scipy
 from tqdm import tqdm
+from dask_jobqueue import SLURMCluster
+from dask.distributed import Client
+from dask.distributed import progress
 
 descr = "subset and regrid (WRF) forcings data for (ParFlow) hydrologic model"
 
@@ -60,13 +64,19 @@ def parse_args(args):
     parser.add_argument("--dest_grid_ny", "-y", dest="ny", required=True,
                         help="the number of y cells in the destination grid", type=int)
 
-    parser.add_argument("--day_number_start", "-d", dest="day_number", required=False,
-                        default=0, type=int,
-                        help="the counter value for the start day")
+    # parser.add_argument("--day_number_start", "-d", dest="day_number", required=False,
+    #                     default=0, type=int,
+    #                     help="the counter value for the start day")
+    #
+    # parser.add_argument("--number_of_days", "-n", dest="num_days", required=False,
+    #                     default=0, type=int,
+    #                     help="the number of days in the timespan to subset")
 
-    parser.add_argument("--number_of_days", "-n", dest="num_days", required=False,
-                        default=0, type=int,
-                        help="the number of days in the timespan to subset")
+    parser.add_argument("--partition", "-p", dest="partition", required=False, default="defq", type=str,
+                        help="the SLURM partition to submit the jobs to")
+
+    parser.add_argument("--num_workers", "-w", dest="num_workers", required=False, default=1, type=int,
+                        help="the number of cluster workers to use for the jobs")
 
     return parser.parse_args(args)
 
@@ -234,28 +244,11 @@ def write_pfb_output(forcings_data, num_days, out_dir, start_day_num=0):
             file_time_stop = file_time_stop + hours_in_file
 
 
-def main():
-    # parse the command line arguments
-    args = parse_args(sys.argv[1:])
-
-    # calculate number of input days to process
-    if args.num_days == 0:
-        days_to_load = (args.end_date - args.start_date).days - args.day_number
-    else:
-        days_to_load = args.num_days
-
-    # alert the user about the job details
-    print('Begin processing job:')
-    for arg in vars(args):
-        print(' {} {}'.format(arg, getattr(args, arg) or ''))
-    print(f'Days of data to process: {days_to_load}')
-
-    # generate the list of input files
-    input_files = sorted(glob.glob(os.path.join(args.input_file_path, 'wrfout_d01_*')))
-
+def open_and_subset(input_files, start_index, end_index, dest_grid, out_dir, start_day_num):
     # load the input files
     print('Begin opening the dataset...')
-    input_files = input_files[args.day_number:days_to_load+args.day_number]
+    days_to_load = end_index - start_index
+    input_files = input_files[start_index:days_to_load + start_day_num]
     ds_orig = xr.open_mfdataset(input_files,
                                 drop_variables=var_list_parflow,
                                 combine='nested',
@@ -267,19 +260,53 @@ def main():
     # R2 /scratch/arezaii/snake_river_shape_domain/input_files
     # filepath = '/home/arezaii/projects/parflow/snake_river_shape_domain/input_files/snake_river.latlon.txt'
 
-    print('Begin reading destination coordinates...')
-    coordinates = get_coords_from_lat_lon(args.lat_lon_file, args.nx, args.ny)
-
-    # create the destination grid with lat/lon values
-    dest_grid = make_dest_grid(coordinates, pd.date_range(args.start_date, periods=days_to_load))
-
     out_grid, regrid = build_regridder(ds_subset, dest_grid)
 
     print('Begin regridding data...')
     regridded_data = regrid_data(out_grid, regrid)
 
     print('Begin writing output files...')
-    write_pfb_output(regridded_data, days_to_load, args.out_dir, args.day_number)
+
+    #client.map(write_pfb_output, *[(futures.result(), start, args.out_dir, stop) for start, stop in slices])
+    write_pfb_output(regridded_data, days_to_load, out_dir, start_day_num)
+
+
+def main():
+    # parse the command line arguments
+    args = parse_args(sys.argv[1:])
+
+    # calculate number of input days to process
+    days_to_load = (args.end_date - args.start_date).days #- args.day_number
+
+    # alert the user about the job details
+    print('Begin processing job:')
+    for arg in vars(args):
+        print(' {} {}'.format(arg, getattr(args, arg) or ''))
+    print(f'Days of data to process: {days_to_load}')
+
+    print('Allocating HPC Resources...')
+    cluster = SLURMCluster(queue=args.partition)
+    client = Client(cluster)
+    cluster.scale(args.num_workers)
+
+    # generate the list of input files
+    input_files = sorted(glob.glob(os.path.join(args.input_file_path, 'wrfout_d01_*')))
+
+    # Calculate division of labor
+    slice = days_to_load // args.num_workers
+    slices = [x for x in range(0, days_to_load + 1, slice)]
+
+
+    print('Begin reading destination coordinates...')
+    coordinates = get_coords_from_lat_lon(args.lat_lon_file, args.nx, args.ny)
+
+    # create the destination grid with lat/lon values
+    dest_grid = make_dest_grid(coordinates, pd.date_range(args.start_date, periods=days_to_load))
+
+    futures = client.map(open_and_subset, (input_files, 0, 364, dest_grid, args.out_dir, 0))
+
+    futures.result()
+
     print('Process complete!')
 
 

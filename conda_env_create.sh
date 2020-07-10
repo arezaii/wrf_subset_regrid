@@ -6,7 +6,8 @@ conda create -n wrf_subset_regrid -c conda-forge --strict -y \
     xarray \
     dask \
     pandas \
-    tqdm
+    tqdm \
+    dask-jobqueue
 
 conda activate wrf_subset_regrid
 
