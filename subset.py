@@ -294,7 +294,8 @@ def main():
 
     # Calculate division of labor
     slice = days_to_load // args.num_workers
-    slices = [x for x in range(0, days_to_load + 1, slice)]
+    slices = [(x, x+slice, x) for x in range(0, days_to_load + 1, slice)]
+
 
 
     print('Begin reading destination coordinates...')
@@ -302,10 +303,16 @@ def main():
 
     # create the destination grid with lat/lon values
     dest_grid = make_dest_grid(coordinates, pd.date_range(args.start_date, periods=days_to_load))
+    data_future = client.scatter(dest_grid, broadcast=True)
+    futures = client.map(open_and_subset, [input_files] * args.num_workers,
+                         [start for start,_,_ in slices],
+                         [end for _,end,_ in slices],
+                         [data_future] * args.num_workers,
+                         [args.out_dir] * args.num_workers,
+                         [day for _,_,day in slices])
 
-    futures = client.map(open_and_subset, (input_files, 0, 364, dest_grid, args.out_dir, 0))
-
-    futures.result()
+    for f in futures:
+        f.result()
 
     print('Process complete!')
 
