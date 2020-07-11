@@ -306,7 +306,7 @@ def main():
     data_future = client.scatter(dest_grid, broadcast=True)
     futures = client.map(open_and_subset, [input_files] * args.num_workers,
                          [start for start,_,_ in slices],
-                         [end for _,end,_ in slices],
+                         [min(end, days_to_load) for _,end,_ in slices],
                          [data_future] * args.num_workers,
                          [args.out_dir] * args.num_workers,
                          [day for _,_,day in slices])
