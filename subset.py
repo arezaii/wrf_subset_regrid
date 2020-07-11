@@ -179,7 +179,7 @@ def add_matrix_NaNs(regridder):
     return regridder
 
 
-def build_regridder(original_dataset, destination_grid):
+def create_out_ds(original_dataset):
     ds_out = original_dataset.rename({'XLAT': 'lat', 'XLONG': 'lon'})
     # unsure why we're doing this exactly
     ds_out = ds_out.swap_dims({'Time': 'XTIME'})
@@ -191,11 +191,13 @@ def build_regridder(original_dataset, destination_grid):
     # here we remove the time dim?
     ds_out['lat'] = ds_out['lat'][0, :, :]
     ds_out['lon'] = ds_out['lon'][0, :, :]
+    return ds_out
 
+def build_regridder(ds_out, destination_grid):
     # create the regridder
     regrid = xe.Regridder(ds_out, destination_grid, 'bilinear', reuse_weights=True)
     regrid = add_matrix_NaNs(regrid)
-    return ds_out, regrid
+    return regrid
 
 
 def regrid_data(out_grid, regridder):
@@ -244,7 +246,7 @@ def write_pfb_output(forcings_data, num_days, out_dir, start_day_num=0):
             file_time_stop = file_time_stop + hours_in_file
 
 
-def open_and_subset(input_files, start_index, end_index, dest_grid, out_dir, start_day_num):
+def open_and_subset(input_files, start_index, end_index, regridder, out_dir, start_day_num):
     # load the input files
     print('Begin opening the dataset...')
     days_to_load = end_index - start_index
@@ -257,13 +259,10 @@ def open_and_subset(input_files, start_index, end_index, dest_grid, out_dir, sta
     # subset the list of variables
     ds_subset = subset_variables(ds_orig)
 
-    # R2 /scratch/arezaii/snake_river_shape_domain/input_files
-    # filepath = '/home/arezaii/projects/parflow/snake_river_shape_domain/input_files/snake_river.latlon.txt'
-
-    out_grid, regrid = build_regridder(ds_subset, dest_grid)
+    ds_out = create_out_ds(ds_subset)
 
     print('Begin regridding data...')
-    regridded_data = regrid_data(out_grid, regrid)
+    regridded_data = regrid_data(ds_out, regridder)
 
     print('Begin writing output files...')
 
@@ -296,14 +295,26 @@ def main():
     slice = days_to_load // args.num_workers
     slices = [(x, x+slice, x) for x in range(0, days_to_load + 1, slice)]
 
-
-
     print('Begin reading destination coordinates...')
     coordinates = get_coords_from_lat_lon(args.lat_lon_file, args.nx, args.ny)
 
     # create the destination grid with lat/lon values
     dest_grid = make_dest_grid(coordinates, pd.date_range(args.start_date, periods=days_to_load))
-    data_future = client.scatter(dest_grid, broadcast=True)
+
+    # build regrid weights
+    ds_orig = xr.open_mfdataset(input_files[0],
+                                drop_variables=var_list_parflow,
+                                combine='nested',
+                                concat_dim='Time')
+
+    # subset the list of variables
+    ds_subset = subset_variables(ds_orig)
+
+    out_ds = create_out_ds(ds_subset)
+
+    regrid = build_regridder(out_ds, dest_grid)
+
+    data_future = client.scatter(regrid, broadcast=True)
     futures = client.map(open_and_subset, [input_files] * args.num_workers,
                          [start for start,_,_ in slices],
                          [min(end, days_to_load) for _,end,_ in slices],
