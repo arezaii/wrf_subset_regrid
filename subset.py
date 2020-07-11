@@ -168,8 +168,7 @@ def add_matrix_NaNs(regridder):
     regridder.weights = scipy.sparse.coo_matrix(M)
     return regridder
 
-
-def build_regridder(original_dataset, destination_grid):
+def create_out_ds(original_dataset):
     ds_out = original_dataset.rename({'XLAT': 'lat', 'XLONG': 'lon'})
     # unsure why we're doing this exactly
     ds_out = ds_out.swap_dims({'Time': 'XTIME'})
@@ -181,11 +180,13 @@ def build_regridder(original_dataset, destination_grid):
     # here we remove the time dim?
     ds_out['lat'] = ds_out['lat'][0, :, :]
     ds_out['lon'] = ds_out['lon'][0, :, :]
+    return ds_out
 
+def build_regridder(ds_out, destination_grid):
     # create the regridder
     regrid = xe.Regridder(ds_out, destination_grid, 'bilinear', reuse_weights=True)
     regrid = add_matrix_NaNs(regrid)
-    return ds_out, regrid
+    return regrid
 
 
 def regrid_data(out_grid, regridder):
@@ -273,7 +274,8 @@ def main():
     # create the destination grid with lat/lon values
     dest_grid = make_dest_grid(coordinates, pd.date_range(args.start_date, periods=days_to_load))
 
-    out_grid, regrid = build_regridder(ds_subset, dest_grid)
+    out_grid = create_out_ds(ds_subset)
+    regrid = build_regridder(out_grid, dest_grid)
 
     print('Begin regridding data...')
     regridded_data = regrid_data(out_grid, regrid)
