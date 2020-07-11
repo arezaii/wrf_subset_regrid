@@ -313,12 +313,13 @@ def main():
     out_ds = create_out_ds(ds_subset)
 
     regrid = build_regridder(out_ds, dest_grid)
-
-    #data_future = client.scatter(regrid, broadcast=True)
+    regrid._grid_in = None
+    regrid._grid_out = None
+    data_future = client.scatter(regrid, broadcast=True)
     futures = client.map(open_and_subset, [input_files] * args.num_workers,
                          [start for start,_,_ in slices],
                          [min(end, days_to_load) for _,end,_ in slices],
-                         [regrid] * args.num_workers,
+                         [data_future] * args.num_workers,
                          [args.out_dir] * args.num_workers,
                          [day for _,_,day in slices])
 
