@@ -311,8 +311,7 @@ def main():
                          [args.out_dir] * args.num_workers,
                          [day for _,_,day in slices])
 
-    for f in futures:
-        f.result()
+    client.gather(futures)
 
     print('Process complete!')
 
