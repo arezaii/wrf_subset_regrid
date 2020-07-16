@@ -216,11 +216,6 @@ def write_pfb_output(forcings_data, num_days, out_dir, start_day_num=0):
         start = 0  # start hour (inclusive)
         stop = hours_in_file  # end hour (exclusive)
 
-        # attempt to fix rain values being too high in pfb files
-        # WRF files are 9 km^2, PFB are 1 km^2
-        if var == 'APCP':
-            forcings_data[var] = forcings_data[var] / 9
-
         # start hour and stop hour for a day
         # range is number of days contained in forcings file
         for bulk_collect_times in range(0, num_days):
