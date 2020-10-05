@@ -93,9 +93,9 @@ def calc_precip(cum_precip, bucket_precip):
     PRCP = np.zeros(total_precip.shape)
 
     for i in np.arange(1, PRCP.shape[0]):
-        PRCP[i, :, :] = total_precip[i, :, :].values - total_precip[i - 1, :, :].values
+        PRCP[i, :, :] = (total_precip[i, :, :].values - total_precip[i - 1, :, :].values)
 
-    return PRCP
+    return PRCP / 3600.
 
 
 def subset_variables(ds):
@@ -259,9 +259,6 @@ def main():
 
     # subset the list of variables
     ds_subset = subset_variables(ds_orig)
-
-    # R2 /scratch/arezaii/snake_river_shape_domain/input_files
-    # filepath = '/home/arezaii/projects/parflow/snake_river_shape_domain/input_files/snake_river.latlon.txt'
 
     print('Begin reading destination coordinates...')
     coordinates = get_coords_from_lat_lon(args.lat_lon_file, args.nx, args.ny)
