@@ -1,0 +1,30 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module pf_fort_io ! in 
+    interface  ! in :pf_fort_io
+        subroutine pfb_read(value,fname,nx,ny,nz) ! in :pf_fort_io:pf_fort_io.f90
+            real*8 intent(inout),dimension(nx,ny,nz) :: value
+            character*100 intent(in) :: fname
+            integer*4 intent(in),optional,check(shape(value,0)==nx),depend(value) :: nx=shape(value,0)
+            integer*4 intent(in),optional,check(shape(value,1)==ny),depend(value) :: ny=shape(value,1)
+            integer*4 intent(in),optional,check(shape(value,2)==nz),depend(value) :: nz=shape(value,2)
+        end subroutine pfb_read
+        subroutine pfb_write(value,fname,nx,ny,nz,x1,y1,z1,dx,dy,dz) ! in :pf_fort_io:pf_fort_io.f90
+            real*8 dimension(nx,ny,nz) :: value
+            character*200 :: fname
+            integer*4, optional,check(shape(value,0)==nx),depend(value) :: nx=shape(value,0)
+            integer*4, optional,check(shape(value,1)==ny),depend(value) :: ny=shape(value,1)
+            integer*4, optional,check(shape(value,2)==nz),depend(value) :: nz=shape(value,2)
+            real*8 :: x1
+            real*8 :: y1
+            real*8 :: z1
+            real*8 :: dx
+            real*8 :: dy
+            real*8 :: dz
+        end subroutine pfb_write
+    end interface 
+end python module pf_fort_io
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/
