@@ -13,10 +13,16 @@ Assist with regridding and subsetting WRF forcings in NetCDF format to ParFlow f
 * pandas
 * tqdm
 * dask-jobqueue
+* parflowio
 
 ## Usage
 
-See example `wrf_to_pf_subset2.bash` file.
+general usage:
+```
+python subset.py -i <path_to_inputs> -o <output_path> -x <NX> -y <NY> -s <start_date> -e <end_date> -l <lat_lon_file> -d <starting_day_number_for_outputs> -n <number_of_days_from_span> -r <domain_resolution>
+```
+
+See detailed example in `wrf_to_pf_subset2.bash` file.
 
 
 
