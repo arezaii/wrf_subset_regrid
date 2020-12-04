@@ -93,9 +93,9 @@ def calc_precip(cum_precip, bucket_precip):
     PRCP = np.zeros(total_precip.shape)
 
     for i in np.arange(1, PRCP.shape[0]):
-        PRCP[i, :, :] = total_precip[i, :, :].values - total_precip[i - 1, :, :].values
+        PRCP[i, :, :] = (total_precip[i, :, :].values - total_precip[i - 1, :, :].values)
 
-    return PRCP
+    return PRCP / 3600.
 
 
 def subset_variables(ds):
