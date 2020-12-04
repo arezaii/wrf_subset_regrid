@@ -25,7 +25,7 @@ module load anaconda
 source /cm/shared/apps/anaconda3/etc/profile.d/conda.sh
 cd ~/git/wrf_subset_regrid
 conda activate wrf_subset_regrid
-python /scratch/arezaii/wrf_subset_regrid/subset.py -i /scratch/arezaii/wrf_out/wy_2015/d01/ -o /scratch/arezaii/WRF/wy2015/ -x 704 -y 736 -s 10-01-2014 -e 10-01-2015 -l /scratch/arezaii/snake_river_shape_domain/input_files/snake_river.latlon.txt -d 60 -n 60
+python /scratch/arezaii/wrf_subset_regrid/subset.py -i /scratch/arezaii/wrf_out/wy_2015/d01/ -o /scratch/arezaii/WRF/wy2015/ -x 704 -y 736 -s 10-01-2014 -e 10-01-2015 -l /scratch/arezaii/snake_river_shape_domain/input_files/snake_river.latlon.txt -d 60 -n 60 -r 1000
 #python subset.py 365
 
 
