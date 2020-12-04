@@ -10,4 +10,4 @@ conda create -n wrf_subset_regrid -c conda-forge --strict -y \
 
 conda activate wrf_subset_regrid
 
-python setup.py install
+python -m pip install parflowio

@@ -1,17 +1,17 @@
 import sys
+import datetime
+import glob
+import os
+import argparse
 import xarray as xr
 import numpy as np
 import pandas as pd
-from varlist import var_list_parflow, var_list_wh
-import glob
-import os
 import xesmf as xe
 import dask
-import write_pfb
-import argparse
-import datetime
 import scipy
 from tqdm import tqdm
+from parflowio.pyParflowio import PFData
+from varlist import var_list_parflow, var_list_wh
 
 descr = "subset and regrid (WRF) forcings data for (ParFlow) hydrologic model"
 
@@ -68,6 +68,9 @@ def parse_args(args):
                         default=0, type=int,
                         help="the number of days in the timespan to subset")
 
+    parser.add_argument("--resolution", "-r", dest="dx", required=False, default=1000, type=int,
+                        help="the spatial resolution of the destination grid")
+
     return parser.parse_args(args)
 
 
@@ -81,9 +84,6 @@ def parse_args(args):
 # write output in PFB format
 # hourly forcings data
 # 1D or 3D output
-
-
-# input_files = sorted(glob.glob(f'/scratch/arezaii/wrf_out/wy_{water_year}/d01/wrfout_d01_*'))
 
 
 # Decummulate Precipitation
@@ -149,10 +149,6 @@ def make_dest_grid(coords, time_index):
     x_len = len(coords.get('lons')[0])
     y_len = len(coords.get('lats'))
     data = np.zeros((y_len, x_len))
-    # print(data.shape)
-    # da_lons = xr.DataArray(coords.get('lons'), dims=['lon'])
-    # da_lats = xr.DataArray(coords.get('lats'), dims=['lat'])
-    # print(da_lons,da_lats)
     ds = xr.Dataset({'data': (['y', 'x'], data)},
                     coords={'lon': (['y', 'x'], coords.get('lons')), 'lat': (['y', 'x'], coords.get('lats')),
                             'time': time_index})
@@ -170,14 +166,10 @@ def add_matrix_NaNs(regridder):
 
 def create_out_ds(original_dataset):
     ds_out = original_dataset.rename({'XLAT': 'lat', 'XLONG': 'lon'})
-    # unsure why we're doing this exactly
+
     ds_out = ds_out.swap_dims({'Time': 'XTIME'})
     ds_out = ds_out.rename({'XTIME': 'Time'})
-    # ds_out = ds_out.rename({'south_north' : 'lat', 'west_east':'lon'})
-    # print(ds['lat'][0,:,:])
 
-    # what's going on here?#
-    # here we remove the time dim?
     ds_out['lat'] = ds_out['lat'][0, :, :]
     ds_out['lon'] = ds_out['lon'][0, :, :]
     return ds_out
@@ -191,20 +183,17 @@ def build_regridder(ds_out, destination_grid):
 
 def regrid_data(out_grid, regridder):
     varlist = [varname for varname in out_grid.keys() if varname != 'Times']
-    # print(varlist)
+
     new_ds = xr.Dataset(data_vars=None, attrs=out_grid.attrs)
     for var in tqdm(varlist):
-        # print(f'starting {var}')
         var_regrid = regridder(out_grid[var])
         new_ds[var] = ['Time', 'south_north', 'west_east'], dask.array.zeros_like(var_regrid)
         new_ds[var] = var_regrid
     new_ds.attrs = {'TITLE': 'REGRIDDED AND SUBSET OUTPUT FROM WRF V3.8.1 MODEL'}
-    # new_ds.to_netcdf(os.path.join(out_dir, regrid_filename), mode='w')
-    # print('done')
     return new_ds
 
 
-def write_pfb_output(forcings_data, num_days, out_dir, start_day_num=0):
+def write_pfb_output(forcings_data, num_days, out_dir, dx, start_day_num=0):
     varnames = ['APCP', 'DLWR', 'DSWR', 'Press', 'SPFH', 'Temp', 'UGRD', 'VGRD']
 
     hours_in_file = 24
@@ -219,10 +208,12 @@ def write_pfb_output(forcings_data, num_days, out_dir, start_day_num=0):
         # start hour and stop hour for a day
         # range is number of days contained in forcings file
         for bulk_collect_times in range(0, num_days):
-            write_pfb.pfb_write(np.transpose(np.nan_to_num(forcings_data[var].values[start:stop, :, :], nan=-9999.0),
-                                             (2, 1, 0)),
-                                os.path.join(out_dir, f'WRF.{var}.{file_time_start:06d}_to_{file_time_stop:06d}.pfb'),
-                                float(0.0), float(0.0), float(0.0), float(1000.0), float(1000.0), float(1000.0))
+            data_obj = PFData(np.nan_to_num(forcings_data[var].values[start:stop, :, :], nan=-9999.0))
+            data_obj.setDX(dx)
+            data_obj.setDY(dx)
+            data_obj.setDZ(dx)
+            data_obj.writeFile(os.path.join(out_dir, f'WRF.{var}.{file_time_start:06d}_to_{file_time_stop:06d}.pfb'))
+            del data_obj
             start = stop
             stop = stop + hours_in_file  # size of day in hours
 
@@ -260,9 +251,6 @@ def main():
     # subset the list of variables
     ds_subset = subset_variables(ds_orig)
 
-    # R2 /scratch/arezaii/snake_river_shape_domain/input_files
-    # filepath = '/home/arezaii/projects/parflow/snake_river_shape_domain/input_files/snake_river.latlon.txt'
-
     print('Begin reading destination coordinates...')
     coordinates = get_coords_from_lat_lon(args.lat_lon_file, args.nx, args.ny)
 
@@ -276,7 +264,7 @@ def main():
     regridded_data = regrid_data(out_grid, regrid)
 
     print('Begin writing output files...')
-    write_pfb_output(regridded_data, days_to_load, args.out_dir, args.day_number)
+    write_pfb_output(regridded_data, days_to_load, args.out_dir, args.dx, args.day_number)
     print('Process complete!')
 
 
