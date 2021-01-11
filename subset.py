@@ -71,6 +71,9 @@ def parse_args(args):
     parser.add_argument("--resolution", "-r", dest="dx", required=False, default=1000, type=int,
                         help="the spatial resolution of the destination grid")
 
+	parser.add_argument("--file-pattern", "-p", dest="file_pattern", required=False, default="*",
+	                    help="the filename pattern to match for files to clip")
+
     return parser.parse_args(args)
 
 
@@ -212,7 +215,7 @@ def write_pfb_output(forcings_data, num_days, out_dir, dx, start_day_num=0):
             data_obj.setDX(dx)
             data_obj.setDY(dx)
             data_obj.setDZ(dx)
-            data_obj.writeFile(os.path.join(out_dir, f'WRF.{var}.{file_time_start:06d}_to_{file_time_stop:06d}.pfb'))
+            data_obj.writeFile(os.path.join(out_dir, f'WRF.{var}.{file_time_start+1:06d}_to_{file_time_stop:06d}.pfb'))
             del data_obj
             start = stop
             stop = stop + hours_in_file  # size of day in hours
@@ -238,11 +241,16 @@ def main():
     print(f'Days of data to process: {days_to_load}')
 
     # generate the list of input files
-    input_files = sorted(glob.glob(os.path.join(args.input_file_path, 'wrfout_d01_*')))
+    input_files = sorted(glob.glob(os.path.join(args.input_file_path, args.file_pattern)))
 
     # load the input files
     print('Begin opening the dataset...')
-    input_files = input_files[args.day_number:days_to_load+args.day_number]
+
+    # TODO: This assumes all forcing files for a given water year reside in the same folder, which is not always correct
+	input_files = input_files[args.day_number:days_to_load+args.day_number]
+    for f in input_files:
+        print(f)
+
     ds_orig = xr.open_mfdataset(input_files,
                                 drop_variables=var_list_parflow,
                                 combine='nested',
